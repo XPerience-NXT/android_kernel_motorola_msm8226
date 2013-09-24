@@ -2315,7 +2315,7 @@ static __devinit int msm8226_asoc_machine_probe(struct platform_device *pdev)
 	atomic_set(&pri_mi2s_rsc_ref, 0);
 
 	mbhc_cfg.gpio_level_insert = of_property_read_bool(pdev->dev.of_node,
-					"qcom,headset-jack-type-NO");
+					"qcom,headset-jack-type-NC");
 
 	ret = snd_soc_register_card(card);
 	if (ret == -EPROBE_DEFER)
