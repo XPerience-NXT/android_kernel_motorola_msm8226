@@ -378,10 +378,8 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -mfpu=neon-vfpv4 -mfloat-abi=softfp \
-                   -mcpu=cortex-a7 -mtune=cortex-a7 -ffast-math \
-		   -ftree-vectorize -mvectorize-with-neon-quad -funroll-loops \
-		   -fgraphite-identity -floop-interchange -floop-strip-mine \
-		   -floop-block -floop-parallelize-all \
+                   -ffast-math \
+		   -mvectorize-with-neon-quad \
 		   -fno-delete-null-pointer-checks
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
