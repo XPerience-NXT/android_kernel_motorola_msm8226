@@ -52,6 +52,7 @@ static inline void usleep(unsigned long usecs)
 	usleep_range(usecs, usecs);
 }
 
+int usleep_range_interruptible(unsigned long min, unsigned long max);
 static inline void ssleep(unsigned int seconds)
 {
 	msleep(seconds * 1000);
