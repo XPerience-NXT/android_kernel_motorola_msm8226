@@ -2,6 +2,7 @@
  * Author: Paul Reioux aka Faux123 <reioux@gmail.com>
  *
  * Copyright 2012~2014 Paul Reioux
+ * Hardcoded by Carlos Jesús aka TeamMEX@XDA-Dev
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,7 +22,6 @@
 #include <linux/rq_stats.h>
 #include <linux/slab.h>
 #include <linux/input.h>
-#include <linux/cpufreq.h>
 
 #if CONFIG_POWERSUSPEND
 #include <linux/powersuspend.h>
@@ -31,18 +31,18 @@
 #undef DEBUG_INTELLI_PLUG
 
 #define INTELLI_PLUG_MAJOR_VERSION	2
-#define INTELLI_PLUG_MINOR_VERSION	6
+#define INTELLI_PLUG_MINOR_VERSION	3
 
-#define DEF_SAMPLING_MS			(1000)
-#define BUSY_SAMPLING_MS		(500)
+#define DEF_SAMPLING_MS			(40)
+#define BUSY_SAMPLING_MS		(20)
 
+#define BUSY_PERSISTENCE		10
 #define DUAL_CORE_PERSISTENCE		7
 #define TRI_CORE_PERSISTENCE		5
 #define QUAD_CORE_PERSISTENCE		3
 
-#define BUSY_PERSISTENCE		10
-
 #define CPU_DOWN_FACTOR			2
+#define NR_FSHIFT			3
 
 static DEFINE_MUTEX(intelli_plug_mutex);
 
@@ -58,9 +58,6 @@ module_param(intelli_plug_active, uint, 0644);
 static unsigned int eco_mode_active = 0;
 module_param(eco_mode_active, uint, 0644);
 
-static unsigned int touch_boost_active = 1;
-module_param(touch_boost_active, uint, 0644);
-
 //default to something sane rather than zero
 static unsigned int sampling_time = DEF_SAMPLING_MS;
 
@@ -68,16 +65,6 @@ static unsigned int persist_count = 0;
 static unsigned int busy_persist_count = 0;
 
 static bool suspended = false;
-
-struct ip_cpu_info {
-	int cpu;
-	unsigned int curr_max;
-};
-
-static DEFINE_PER_CPU(struct ip_cpu_info, ip_info);
-
-static unsigned int screen_off_max = UINT_MAX;
-module_param(screen_off_max, uint, 0644);
 
 #define NR_FSHIFT	3
 static unsigned int nr_fshift = NR_FSHIFT;
@@ -97,7 +84,6 @@ static unsigned int nr_run_hysteresis = 4;  /* 0.5 thread */
 module_param(nr_run_hysteresis, uint, 0644);
 
 static unsigned int nr_run_last;
-static unsigned int avg_nr_run;
 
 static unsigned int NwNs_Threshold[] = { 19, 30,  19,  11,  19,  11, 0,  11};
 static unsigned int TwTs_Threshold[] = {140,  0, 140, 190, 140, 190, 0, 190};
@@ -151,7 +137,7 @@ static int mp_decision(void)
 
 static unsigned int calculate_thread_stats(void)
 {
-	unsigned int avg_nr_run;
+	unsigned int avg_nr_run = avg_nr_running();
 	unsigned int nr_run;
 	unsigned int threshold_size;
 
@@ -194,9 +180,8 @@ static void __cpuinit intelli_plug_boost_fn(struct work_struct *work)
 
 	int nr_cpus = num_online_cpus();
 
-	if (touch_boost_active)
-		if (nr_cpus < 2)
-			cpu_up(1);
+	if (nr_cpus < 2)
+		cpu_up(1);
 }
 
 static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
@@ -319,35 +304,6 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 }
 
 #ifdef CONFIG_POWERSUSPEND
-static void screen_off_limit(bool on)
-{
-	unsigned int i, ret;
-	struct cpufreq_policy policy;
-	struct ip_cpu_info *l_ip_info;
-
-	/* not active, so exit */
-	if (screen_off_max == UINT_MAX)
-		return;
-
-	for_each_online_cpu(i) {
-
-		l_ip_info = &per_cpu(ip_info, i);
-		ret = cpufreq_get_policy(&policy, i);
-		if (ret)
-			continue;
-
-		if (on) {
-			/* save current instance */
-			l_ip_info->curr_max = policy.max;
-			policy.max = screen_off_max;
-		} else {
-			/* restore */
-			policy.max = l_ip_info->curr_max;
-		}
-		cpufreq_update_policy(i);
-	}
-}
-
 static void intelli_plug_suspend(struct power_suspend *handler)
 {
 	int i;
@@ -357,28 +313,11 @@ static void intelli_plug_suspend(struct power_suspend *handler)
 
 	mutex_lock(&intelli_plug_mutex);
 	suspended = true;
-	screen_off_limit(true);
 	mutex_unlock(&intelli_plug_mutex);
 
 	// put rest of the cores to sleep!
 	for (i = num_of_active_cores - 1; i > 0; i--) {
 		cpu_down(i);
-	}
-}
-
-static void wakeup_boost(void)
-{
-	unsigned int i, ret;
-	struct cpufreq_policy policy;
-
-	for_each_online_cpu(i) {
-
-		ret = cpufreq_get_policy(&policy, i);
-		if (ret)
-			continue;
-
-		policy.cur = policy.max;
-		cpufreq_update_policy(i);
 	}
 }
 
@@ -402,9 +341,6 @@ static void __cpuinit intelli_plug_resume(struct power_suspend *handler)
 	for (i = 1; i < num_of_active_cores; i++) {
 		cpu_up(i);
 	}
-
-	screen_off_limit(false);
-	wakeup_boost();
 
 	queue_delayed_work_on(0, intelliplug_wq, &intelli_plug_work,
 		msecs_to_jiffies(10));
