@@ -378,6 +378,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security -Wno-uninitialized\
 		   -Wno-unused-variable -Wno-error\
+	    	   -Wno-sequence-point \
 		   -mfpu=neon-vfpv4 -mfloat-abi=softfp \
 		   -mvectorize-with-neon-quad \
 		   -fno-delete-null-pointer-checks \

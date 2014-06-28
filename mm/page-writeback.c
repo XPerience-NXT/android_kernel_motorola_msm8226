@@ -124,7 +124,7 @@ EXPORT_SYMBOL_GPL(dirty_writeback_active_interval);
 /*
  * The interval between `kupdate'-style writebacks when the system is suspended
  */
-unsigned int dirty_writeback_suspend_interval = EFAULT_DIRTY_WRITEBACK_INTERVAL; /* centiseconds */
+unsigned int dirty_writeback_suspend_interval = DEFAULT_DIRTY_WRITEBACK_INTERVAL; /* centiseconds */
 EXPORT_SYMBOL_GPL(dirty_writeback_suspend_interval);
 #endif
 
