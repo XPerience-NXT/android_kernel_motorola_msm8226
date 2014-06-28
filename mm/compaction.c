@@ -14,7 +14,7 @@
 #include <linux/backing-dev.h>
 #include <linux/sysctl.h>
 #include <linux/sysfs.h>
-#include <linux/powersuspend.h>
+#include <linux/earlysuspend.h>
 #include "internal.h"
 
 #ifdef CONFIG_COMPACTION
@@ -1068,7 +1068,7 @@ unsigned long try_to_compact_pages(struct zonelist *zonelist,
 	return rc;
 }
 
-#ifdef CONFIG_POWERSUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
 static struct work_struct compactnodes_w;
 static int compact_nodes(void);
 static void compactnodes_work(struct work_struct *w)
@@ -1085,12 +1085,13 @@ static void compactnodes_work(struct work_struct *w)
 }
 
 
-static void compact_nodes_suspend(struct power_suspend *s)
+static void compact_nodes_suspend(struct early_suspend *s)
 {
 	schedule_work(&compactnodes_w);
 }
 
-static struct power_suspend power_suspend_compaction_desc = {
+static struct early_suspend early_suspend_compaction_desc = {
+	.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN,
 	.suspend = compact_nodes_suspend,
 	.resume = NULL,
 };
@@ -1216,13 +1217,13 @@ void compaction_unregister_node(struct node *node)
 }
 #endif /* CONFIG_SYSFS && CONFIG_NUMA */
 
-#ifdef CONFIG_POWERSUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
 static int  __init mem_compaction_init(void)
 {
 	INIT_WORK(&compactnodes_w, compactnodes_work);
-	register_power_suspend(&power_suspend_compaction_desc);
+	register_early_suspend(&early_suspend_compaction_desc);
 	return 0;
 }
 late_initcall(mem_compaction_init);
-#endif /* CONFIG_POWERSUSPEND */
+#endif /* CONFIG_HAS_EARLYSUSPEND */
 #endif /* CONFIG_COMPACTION */
