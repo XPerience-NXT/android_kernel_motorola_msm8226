@@ -305,7 +305,11 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	if (global_page_state(NR_SHMEM) + total_swapcache_pages <
 		global_page_state(NR_FILE_PAGES))
 		other_file = global_page_state(NR_FILE_PAGES) -
+<<<<<<< HEAD
 						global_page_state(NR_SHMEM) +
+=======
+						global_page_state(NR_SHMEM) -
+>>>>>>> parent of 77a1d88...  lowmemorykiller: use swapfree instead of swaptotal for better memory reclaim
 						total_swapcache_pages;
 #endif
 	else
