@@ -278,7 +278,9 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	int other_file;
 	unsigned long nr_to_scan = sc->nr_to_scan;
 	struct zone_avail zall[MAX_NUMNODES][MAX_NR_ZONES];
-
+#if defined (CONFIG_SWAP) && (defined (CONFIG_ZSWAP) || defined (CONFIG_ZRAM))
+	struct sysinfo si;
+#endif
 	tsk = current->group_leader;
 	if ((tsk->flags & PF_EXITING) && test_task_flag(tsk, TIF_MEMDIE)) {
 		set_tsk_thread_flag(current, TIF_MEMDIE);
@@ -292,12 +294,20 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 
 	other_free = global_page_state(NR_FREE_PAGES);
 
+#if defined (CONFIG_SWAP) && (defined (CONFIG_ZSWAP) || defined (CONFIG_ZRAM))
+	si_swapinfo(&si);
+	other_free = global_page_state(NR_FREE_PAGES) + (si.freeswap >> 1);
+	other_file = global_page_state(NR_FILE_PAGES) -
+						global_page_state(NR_SHMEM) +
+						(si.totalswap >> 1);
+#else
+
 	if (global_page_state(NR_SHMEM) + total_swapcache_pages <
 		global_page_state(NR_FILE_PAGES))
 		other_file = global_page_state(NR_FILE_PAGES) -
 						global_page_state(NR_SHMEM) +
-						(si.freeswap >> 1) -
 						total_swapcache_pages;
+#endif
 	else
 		other_file = 0;
 
