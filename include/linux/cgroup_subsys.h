@@ -72,7 +72,7 @@ SUBSYS(net_prio)
 #endif
 
 /* */
-e#ifdef CONFIG_CGROUP_BFQIO
+#ifdef CONFIG_CGROUP_BFQIO
 SUBSYS(bfqio)
 #endif
 
