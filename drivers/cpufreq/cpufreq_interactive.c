@@ -1334,8 +1334,11 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			/* update target_freq firstly */
 			if (policy->max < pcpu->target_freq)
 				pcpu->target_freq = policy->max;
-			else if (policy->min > pcpu->target_freq)
+			else if (policy->min > pcpu->target_freq){
 				pcpu->target_freq = policy->min;
+				pcpu->floor_freq = policy->min;
+				pcpu->floor_validate_time = ktime_to_us(ktime_get());
+ }		
 
 			/* Reschedule timer.
 			 * Delete the timers, else the timer callback may
