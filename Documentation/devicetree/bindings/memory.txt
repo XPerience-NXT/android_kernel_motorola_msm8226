@@ -36,6 +36,7 @@ wit the following convention:
 	reg = <(baseaddr) (size)>;
 	(linux,contiguous-region);
 	(linux,default-contiguous-region);
+	(linux,reserve-region);
         label = (unique_name);
 };
 
