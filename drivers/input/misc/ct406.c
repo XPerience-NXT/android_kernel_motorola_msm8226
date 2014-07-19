@@ -557,7 +557,7 @@ static void ct406_prox_mode_uncovered(struct ct406_data *ct)
 		piht = ct->pdata_max;
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	prox_covered = false;
-	if (ct_suspend)
+	if(ct_suspended)
 		touch_resume();
 #endif
 	ct->prox_mode = CT406_PROX_MODE_UNCOVERED;
@@ -581,7 +581,7 @@ static void ct406_prox_mode_covered(struct ct406_data *ct)
 	ct406_write_prox_thresholds(ct);
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 	prox_covered = true;
-	if (ct_supend){
+	if (ct_suspended) {
 		touch_suspend();
 	}
 #endif
@@ -846,7 +846,6 @@ static int ct406_disable_prox(struct ct406_data *ct)
 			pr_info("%s: Powering off\n", __func__);
 		ct406_device_power_off(ct);
 	}
-
 	return 0;
 }
 
@@ -1419,26 +1418,26 @@ static void ct406_resume(struct early_suspend *handler)
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
 #ifdef CONFIG_POWERSUSPEND
 static void ct_power_suspend(struct power_suspend *h) {
-	 struct ct406_data *ct = ct406_misc_data;
-
- 	ct_suspended = true;
+	struct ct406_data *ct = ct406_misc_data;
+	
+	ct_suspended = true;
 	if (!ct->prox_enabled && (s2w_switch > 0 || dt2w_switch > 0)) {
 		forced = true;
-		 ct406_enable_prox(ct);
-	 }
+		ct406_enable_prox(ct);
+	}
 }
 
 static void ct_power_resume(struct power_suspend *h) {
-		 ct_suspended = false;
-	 if (forced) {
-		 ct406_disable_prox(ct406_misc_data);
-	 forced = false;
-     }
+	ct_suspended = false;
+	if (forced) {
+		ct406_disable_prox(ct406_misc_data);
+		forced = false;
+	}
 }
 
 static struct power_suspend ct_power_suspend_handler = {
-	 .suspend = ct_power_suspend,
-	 .resume = ct_power_resume,
+	.suspend = ct_power_suspend,
+	.resume = ct_power_resume,
 };
 #endif
 #endif
@@ -1633,8 +1632,8 @@ static int ct406_probe(struct i2c_client *client,
 		goto error_revision_read_failed;
 	}
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	 if (s2w_switch > 0 || dt2w_switch > 0)
-		 ct406_enable_prox(ct)
+	if (s2w_switch > 0 || dt2w_switch > 0)
+		ct406_enable_prox(ct);
 #endif
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
