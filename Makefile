@@ -1,6 +1,6 @@
 VERSION = 3
 PATCHLEVEL = 4
-SUBLEVEL = 98
+SUBLEVEL = 99
 EXTRAVERSION =
 NAME = Saber-toothed Squirrel
 
@@ -356,10 +356,18 @@ CC		= $(srctree)/scripts/gcc-wrapper.py $(REAL_CC)
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-CFLAGS_MODULE   =
+CFLAGS_MODULE   =  -DMODULE -fno-pic \
+		   -marm -mfpu=neon-vfpv4 \
+		   -mvectorize-with-neon-quad -fgcse-after-reload -fgcse-sm -fgcse-las \
+		   -ftree-loop-im -ftree-loop-ivcanon \
+		   -fivopts
 AFLAGS_MODULE   =
 LDFLAGS_MODULE  =
-CFLAGS_KERNEL	=
+CFLAGS_KERNEL	=-mtune=cortex-a7 \
+		 -marm -mfpu=neon-vfpv4 -mvectorize-with-neon-quad -fgcse-after-reload -fgcse-sm -fgcse-las \
+		 -ftree-loop-im -ftree-loop-ivcanon \
+		 -fivopts -ftree-vectorize \
+		 -ffast-math
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
@@ -379,11 +387,13 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Wno-format-security -Wno-uninitialized\
 		   -Wno-unused-variable -Wno-error\
 	    	   -Wno-sequence-point \
-		   -mfpu=neon-vfpv4 -mfloat-abi=softfp \
+		   -mfpu=neon-vfpv4 -fgcse-after-reload -fgcse-las \
 		   -mvectorize-with-neon-quad \
 		   -fno-delete-null-pointer-checks \
 		   -march=armv7-a -mtune=cortex-a7 \
 	           -ffast-math -fsingle-precision-constant \
+	           -ftree-loop-im -ftree-loop-ivcanon \
+		   -fivopts -ftree-vectorize \
                    -fgcse-lm -fgcse-sm -fsched-spec-load -fforce-addr
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=

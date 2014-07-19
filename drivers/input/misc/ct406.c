@@ -20,6 +20,11 @@
 
 #include <linux/delay.h>
 #include <linux/earlysuspend.h>
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_POWERSUSPEND
+#include <linux/powersuspend.h>
+#endif
+#endif
 #include <linux/i2c.h>
 #include <linux/input.h>
 #include <linux/interrupt.h>
@@ -220,6 +225,15 @@ static struct ct406_reg {
 #define CT406_DBG_IOCTL			0x00000008
 #define CT406_DBG_SUSPEND_RESUME	0x00000010
 static u32 ct406_debug = 0x00000000;
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#include <linux/input/sweep2wake.h>
+#include <linux/input/doubletap2wake.h>
+bool ct_suspended = false;
+bool prox_covered = false;
+bool forced = true;
+extern void touch_suspend(void);
+extern void touch_resume(void);
+#endif
 module_param_named(debug_mask, ct406_debug, uint, 0644);
 
 static int ct406_i2c_read(struct ct406_data *ct, u8 *buf, int len)
@@ -541,7 +555,11 @@ static void ct406_prox_mode_uncovered(struct ct406_data *ct)
 		pilt = 0;
 	if (piht > ct->pdata_max)
 		piht = ct->pdata_max;
-
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	prox_covered = false;
+	if(ct_suspended)
+		touch_resume();
+#endif
 	ct->prox_mode = CT406_PROX_MODE_UNCOVERED;
 	ct->prox_low_threshold = pilt;
 	ct->prox_high_threshold = piht;
@@ -557,11 +575,16 @@ static void ct406_prox_mode_covered(struct ct406_data *ct)
 
 	if (pilt > ct->pdata_max)
 		pilt = ct->pdata_max;
-
 	ct->prox_mode = CT406_PROX_MODE_COVERED;
 	ct->prox_low_threshold = pilt;
 	ct->prox_high_threshold = piht;
 	ct406_write_prox_thresholds(ct);
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	prox_covered = true;
+	if (ct_suspended) {
+		touch_suspend();
+	}
+#endif
 	pr_info("%s: Prox mode covered\n", __func__);
 }
 
@@ -823,7 +846,6 @@ static int ct406_disable_prox(struct ct406_data *ct)
 			pr_info("%s: Powering off\n", __func__);
 		ct406_device_power_off(ct);
 	}
-
 	return 0;
 }
 
@@ -1393,6 +1415,33 @@ static void ct406_resume(struct early_suspend *handler)
 }
 #endif /* CONFIG_HAS_EARLYSUSPEND */
 
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_POWERSUSPEND
+static void ct_power_suspend(struct power_suspend *h) {
+	struct ct406_data *ct = ct406_misc_data;
+	
+	ct_suspended = true;
+	if (!ct->prox_enabled && (s2w_switch > 0 || dt2w_switch > 0)) {
+		forced = true;
+		ct406_enable_prox(ct);
+	}
+}
+
+static void ct_power_resume(struct power_suspend *h) {
+	ct_suspended = false;
+	if (forced) {
+		ct406_disable_prox(ct406_misc_data);
+		forced = false;
+	}
+}
+
+static struct power_suspend ct_power_suspend_handler = {
+	.suspend = ct_power_suspend,
+	.resume = ct_power_resume,
+};
+#endif
+#endif
+
 #ifdef CONFIG_OF
 static struct ct406_platform_data *
 ct406_of_init(struct i2c_client *client)
@@ -1582,6 +1631,10 @@ static int ct406_probe(struct i2c_client *client,
 		pr_err("%s:device init failed: %d\n", __func__, error);
 		goto error_revision_read_failed;
 	}
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+	if (s2w_switch > 0 || dt2w_switch > 0)
+		ct406_enable_prox(ct);
+#endif
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	ct->ct406_early_suspend.suspend = ct406_suspend;
@@ -1673,6 +1726,11 @@ static struct i2c_driver ct406_i2c_driver = {
 
 static int __init ct406_init(void)
 {
+#ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
+#ifdef CONFIG_POWERSUSPEND
+	register_power_suspend(&ct_power_suspend_handler);
+#endif
+#endif
 	return i2c_add_driver(&ct406_i2c_driver);
 }
 
