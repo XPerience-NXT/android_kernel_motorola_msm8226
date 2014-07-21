@@ -433,6 +433,12 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		int i, j;
 		char zinfo[ZINFO_LENGTH];
 		char *p = zinfo;
+	 if (fatal_signal_pending(selected)) {
+		 pr_warning("process %d is suffering a slow death\n",
+				 selected->pid);
+		 read_unlock(&tasklist_lock);
+		 return rem;
+ }
 		lowmem_print(1, "Killing '%s' (%d), adj %d,\n" \
 				"   to free %ldkB on behalf of '%s' (%d) because\n" \
 				"   cache %ldkB is below limit %ldkB for oom_score_adj %d\n" \
