@@ -116,6 +116,10 @@ void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
 DEFINE_MUTEX(sched_domains_mutex);
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
+#ifdef CONFIG_INTELLI_PLUG
+DEFINE_PER_CPU_SHARED_ALIGNED(struct nr_stats_s, runqueue_stats);
+#endif
+
 static void update_rq_clock_task(struct rq *rq, s64 delta);
 
 void update_rq_clock(struct rq *rq)
@@ -1341,7 +1345,7 @@ out:
 		 * leave kernel.
 		 */
 		if (p->mm && printk_ratelimit()) {
-			printk_sched("process %d (%s) no longer affine to cpu%d\n",
+			printk_deferred("process %d (%s) no longer affine to cpu%d\n",
 					task_pid_nr(p), p->comm, cpu);
 		}
 	}
@@ -2176,6 +2180,87 @@ unsigned long long nr_context_switches(void)
 	return sum;
 }
 
+
+#ifdef CONFIG_INTELLI_PLUG
+unsigned long avg_nr_running(void)
+{
+	unsigned long i, sum = 0;
+	unsigned int seqcnt, ave_nr_running;
+
+	for_each_online_cpu(i) {
+		struct nr_stats_s *stats = &per_cpu(runqueue_stats, i);
+		struct rq *q = cpu_rq(i);
+
+		/*
+		 * Update average to avoid reading stalled value if there were
+		 * no run-queue changes for a long time. On the other hand if
+		 * the changes are happening right now, just read current value
+		 * directly.
+		 */
+		seqcnt = read_seqcount_begin(&stats->ave_seqcnt);
+		ave_nr_running = do_avg_nr_running(q);
+		if (read_seqcount_retry(&stats->ave_seqcnt, seqcnt)) {
+			read_seqcount_begin(&stats->ave_seqcnt);
+			ave_nr_running = stats->ave_nr_running;
+		}
+
+		sum += ave_nr_running;
+	}
+
+	return sum;
+}
+EXPORT_SYMBOL(avg_nr_running);
+
+unsigned long avg_cpu_nr_running(unsigned int cpu)
+{
+	unsigned int seqcnt, ave_nr_running;
+	struct nr_stats_s *stats = &per_cpu(runqueue_stats, cpu);
+	struct rq *q = cpu_rq(cpu);
+
+	/*
+	 * Update average to avoid reading stalled value if there were
+	 * no run-queue changes for a long time. On the other hand if
+	 * the changes are happening right now, just read current value
+	 * directly.
+	 */
+	seqcnt = read_seqcount_begin(&stats->ave_seqcnt);
+	ave_nr_running = do_avg_nr_running(q);
+	if (read_seqcount_retry(&stats->ave_seqcnt, seqcnt)) {
+		read_seqcount_begin(&stats->ave_seqcnt);
+		ave_nr_running = stats->ave_nr_running;
+	}
+
+	return ave_nr_running;
+}
+EXPORT_SYMBOL(avg_cpu_nr_running);
+#else
+unsigned long avg_nr_running(void)
+{
+  unsigned long i, sum = 0;
+  unsigned int seqcnt, ave_nr_running;
+
+  for_each_online_cpu(i) {
+  struct rq *q = cpu_rq(i);
+
+    /*
+     * Update average to avoid reading stalled value if there were
+     * no run-queue changes for a long time. On the other hand if
+     * the changes are happening right now, just read current value
+     * directly.
+     */
+    seqcnt = read_seqcount_begin(&q->ave_seqcnt);
+    ave_nr_running = do_avg_nr_running(q);
+    if (read_seqcount_retry(&q->ave_seqcnt, seqcnt)) {
+      read_seqcount_begin(&q->ave_seqcnt);
+      ave_nr_running = q->ave_nr_running;
+    }
+
+    sum += ave_nr_running;
+  }
+
+  return sum;
+}
+#endif
 unsigned long nr_iowait(void)
 {
 	unsigned long i, sum = 0;
@@ -2197,7 +2282,6 @@ unsigned long this_cpu_load(void)
 	struct rq *this = this_rq();
 	return this->cpu_load[0];
 }
-
 
 /*
  * Global load-average calculations
@@ -3536,9 +3620,6 @@ static inline bool owner_running(struct mutex *lock, struct task_struct *owner)
  */
 int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 {
-	if (!sched_feat(OWNER_SPIN))
-		return 0;
-
 	rcu_read_lock();
 	while (owner_running(lock, owner)) {
 		if (need_resched())
@@ -3554,6 +3635,27 @@ int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 	 * success only when lock->owner is NULL.
 	 */
 	return lock->owner == NULL;
+}
+
+/*
+ * Initial check for entering the mutex spinning loop
+ */
+int mutex_can_spin_on_owner(struct mutex *lock)
+{
+	int retval = 1;
+
+	if (!sched_feat(OWNER_SPIN))
+		return 0;
+
+	rcu_read_lock();
+	if (lock->owner)
+		retval = lock->owner->on_cpu;
+	rcu_read_unlock();
+	/*
+	 * if lock->owner is not set, the mutex owner may have just acquired
+	 * it and not set the owner yet or the mutex has been released.
+	 */
+	return retval;
 }
 #endif
 
@@ -6276,7 +6378,7 @@ static const struct cpumask *cpu_cpu_mask(int cpu)
 	return cpumask_of_node(cpu_to_node(cpu));
 }
 
-int sched_smt_power_savings = 0, sched_mc_power_savings = 0;
+int sched_smt_power_savings = 0, sched_mc_power_savings = 2;
 
 struct sd_data {
 	struct sched_domain **__percpu sd;

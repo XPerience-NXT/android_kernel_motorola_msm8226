@@ -1869,6 +1869,13 @@ static int do_new_mount(struct path *path, char *type, int flags,
 	err = do_add_mount(real_mount(mnt), path, mnt_flags);
 	if (err)
 		mntput(mnt);
+#ifdef CONFIG_ASYNC_FSYNC
+	 if (!err && ((!strcmp(type, "ext4") &&
+ 	     !strcmp(path->dentry->d_name.name, "data")) ||
+             (!strcmp(type, "fuse") &&
+	     !strcmp(path->dentry->d_name.name, "emulated"))))
+		 mnt->mnt_sb->fsync_flags |= FLAG_ASYNC_FSYNC;
+#endif
 	return err;
 }
 
@@ -2154,10 +2161,6 @@ long do_mount(char *dev_name, char *dir_name, char *type_page,
 	if (retval)
 		goto dput_out;
 
-	/* Default to relatime unless overriden */
-	if (!(flags & MS_NOATIME))
-		mnt_flags |= MNT_RELATIME;
-
 	/* Separate the per-mountpoint flags */
 	if (flags & MS_NOSUID)
 		mnt_flags |= MNT_NOSUID;
@@ -2165,9 +2168,7 @@ long do_mount(char *dev_name, char *dir_name, char *type_page,
 		mnt_flags |= MNT_NODEV;
 	if (flags & MS_NOEXEC)
 		mnt_flags |= MNT_NOEXEC;
-	if (flags & MS_NOATIME)
 		mnt_flags |= MNT_NOATIME;
-	if (flags & MS_NODIRATIME)
 		mnt_flags |= MNT_NODIRATIME;
 	if (flags & MS_STRICTATIME)
 		mnt_flags &= ~(MNT_RELATIME | MNT_NOATIME);

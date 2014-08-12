@@ -1510,6 +1510,10 @@ struct super_block {
 
 	/* Being remounted read-only */
 	int s_readonly_remount;
+#ifdef CONFIG_ASYNC_FSYNC
+#define FLAG_ASYNC_FSYNC 	0x1
+	unsigned int fsync_flags;
+#endif
 };
 
 /* superblock cache pruning functions */
@@ -1638,6 +1642,16 @@ struct file_operations {
 	long (*fallocate)(struct file *file, int mode, loff_t offset,
 			  loff_t len);
 };
+
+static inline int file_readable(struct file *filp)
+{
+	return filp && (filp->f_op->read || filp->f_op->aio_read);
+}
+
+static inline int file_writable(struct file *filp)
+{
+	return filp && (filp->f_op->write || filp->f_op->aio_write);
+}
 
 struct inode_operations {
 	struct dentry * (*lookup) (struct inode *,struct dentry *, struct nameidata *);

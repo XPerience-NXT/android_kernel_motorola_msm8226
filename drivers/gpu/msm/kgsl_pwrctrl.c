@@ -77,8 +77,6 @@ struct clk_pair clks[KGSL_MAX_CLKS] = {
 	},
 };
 
-static void kgsl_pwrctrl_clk(struct kgsl_device *device, int state,
-					  int requested_state);
 static void kgsl_pwrctrl_axi(struct kgsl_device *device, int state);
 static void kgsl_pwrctrl_pwrrail(struct kgsl_device *device, int state);
 
@@ -883,7 +881,7 @@ static void kgsl_pwrctrl_busy_time(struct kgsl_device *device, bool on_time)
 	}
 }
 
-static void kgsl_pwrctrl_clk(struct kgsl_device *device, int state,
+void kgsl_pwrctrl_clk(struct kgsl_device *device, int state,
 					  int requested_state)
 {
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
@@ -1569,9 +1567,12 @@ EXPORT_SYMBOL(kgsl_pwrctrl_disable);
 
 void kgsl_pwrctrl_set_state(struct kgsl_device *device, unsigned int state)
 {
+	struct kgsl_pwrscale *pwrscale = &device->pwrscale;
+
 	trace_kgsl_pwr_set_state(device, state);
 	device->state = state;
 	device->requested_state = KGSL_STATE_NONE;
+	pwrscale->devfreq->state = state;
 }
 EXPORT_SYMBOL(kgsl_pwrctrl_set_state);
 

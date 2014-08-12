@@ -122,10 +122,10 @@ extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
 
 #define FSHIFT		11		/* nr of bits of precision */
 #define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */
-#define LOAD_FREQ	(5*HZ+1)	/* 5 sec intervals */
-#define EXP_1		1884		/* 1/exp(5sec/1min) as fixed-point */
-#define EXP_5		2014		/* 1/exp(5sec/5min) */
-#define EXP_15		2037		/* 1/exp(5sec/15min) */
+#define LOAD_FREQ 	(4*HZ+61)	/* 4.61 sec intervals */
+#define EXP_1 		1896 		/* 1/exp(4.61sec/1min) as fixed-point */
+#define EXP_5 		2017 		/* 1/exp(4.61sec/5min) */
+#define EXP_15 		2038		 /* 1/exp(4.61sec/15min) */
 
 #define CALC_LOAD(load,exp,n) \
 	load *= exp; \
@@ -138,6 +138,7 @@ DECLARE_PER_CPU(unsigned long, process_counts);
 extern int nr_processes(void);
 extern unsigned long nr_running(void);
 extern unsigned long nr_uninterruptible(void);
+extern unsigned long avg_nr_running(void);
 extern unsigned long nr_iowait(void);
 extern unsigned long nr_iowait_cpu(int cpu);
 extern unsigned long this_cpu_load(void);
@@ -377,7 +378,10 @@ extern signed long schedule_timeout_killable(signed long timeout);
 extern signed long schedule_timeout_uninterruptible(signed long timeout);
 asmlinkage void schedule(void);
 extern void schedule_preempt_disabled(void);
+#ifdef CONFIG_MUTEX_SPIN_ON_OWNER
 extern int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner);
+extern int mutex_can_spin_on_owner(struct mutex *lock);
+#endif
 
 struct nsproxy;
 struct user_namespace;
@@ -549,6 +553,7 @@ struct signal_struct {
 	atomic_t		sigcnt;
 	atomic_t		live;
 	int			nr_threads;
+	struct list_head	thread_head;
 
 	wait_queue_head_t	wait_chldexit;	/* for wait4() */
 
@@ -1411,6 +1416,7 @@ struct task_struct {
 	/* PID/PID hash table linkage. */
 	struct pid_link pids[PIDTYPE_MAX];
 	struct list_head thread_group;
+	struct list_head thread_node;
 
 	struct completion *vfork_done;		/* for vfork() */
 	int __user *set_child_tid;		/* CLONE_CHILD_SETTID */
@@ -2412,6 +2418,16 @@ extern bool current_is_single_threaded(void);
 
 #define while_each_thread(g, t) \
 	while ((t = next_thread(t)) != g)
+
+#define __for_each_thread(signal, t)	\
+	list_for_each_entry_rcu(t, &(signal)->thread_head, thread_node)
+
+#define for_each_thread(p, t)		\
+	__for_each_thread((p)->signal, t)
+
+/* Careful: this is a double loop, 'break' won't work as expected. */
+#define for_each_process_thread(p, t)	\
+	for_each_process(p) for_each_thread(p, t)
 
 static inline int get_nr_threads(struct task_struct *tsk)
 {

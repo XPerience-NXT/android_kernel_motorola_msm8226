@@ -93,14 +93,19 @@ static struct devfreq_simple_ondemand_data adreno_ondemand_data = {
 
 static struct devfreq_msm_adreno_tz_data adreno_tz_data = {
 	.bus = {
-		.max = 450,
+		.max = 550,
 	},
+	.device_id = KGSL_DEVICE_3D0,
+};
+
+static struct devfreq_msm_adreno_tz_data adreno_conservative_data = {
 	.device_id = KGSL_DEVICE_3D0,
 };
 
 static const struct devfreq_governor_data adreno_governors[] = {
 	{ .name = "simple_ondemand", .data = &adreno_ondemand_data },
 	{ .name = "msm-adreno-tz", .data = &adreno_tz_data },
+	{ .name = "conservative", .data = &adreno_conservative_data },
 };
 
 static const struct kgsl_functable adreno_functable;
@@ -142,7 +147,7 @@ static struct adreno_device device_3d0 = {
 		.pm_dump_enable = 0,
 	},
 	.gmem_base = 0,
-	.gmem_size = SZ_256K,
+	.gmem_size = SZ_512K,
 	.pfp_fw = NULL,
 	.pm4_fw = NULL,
 	.wait_timeout = 0, /* in milliseconds, 0 means disabled */
@@ -271,16 +276,18 @@ static void adreno_input_work(struct work_struct *work)
 	struct adreno_device *adreno_dev = container_of(work,
 			struct adreno_device, input_work);
 	struct kgsl_device *device = &adreno_dev->dev;
+	
+	if (!_wake_timeout)
+		return;
 
 	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 
 	device->flags |= KGSL_FLAG_WAKE_ON_TOUCH;
 
 	/*
-	 * Don't schedule adreno_start in a high priority workqueue, we are
-	 * already in a workqueue which should be sufficient
+	 * Schedule adreno_start in a high priority workqueue.
 	 */
-	kgsl_pwrctrl_wake(device, 0);
+	kgsl_pwrctrl_wake(device, 1);
 
 	/*
 	 * When waking up from a touch event we want to stay active long enough
@@ -2537,6 +2544,89 @@ static ssize_t _wake_timeout_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", _wake_timeout);
 }
 
+/**
+ * _ft_hang_intr_status_store -  Routine to enable/disable h/w hang interrupt
+ * @dev: device ptr
+ * @attr: Device attribute
+ * @buf: value to write
+ * @count: size of the value to write
+ */
+static ssize_t _ft_hang_intr_status_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	unsigned int new_setting, old_setting;
+	struct kgsl_device *device = kgsl_device_from_dev(dev);
+	struct adreno_device *adreno_dev;
+	int ret;
+	if (device == NULL)
+		return 0;
+	adreno_dev = ADRENO_DEVICE(device);
+
+	mutex_lock(&device->mutex);
+	ret = _ft_sysfs_store(buf, count, &new_setting);
+	if (ret != count)
+		goto done;
+	if (new_setting)
+		new_setting = 1;
+	old_setting =
+		(test_bit(ADRENO_DEVICE_HANG_INTR, &adreno_dev->priv) ? 1 : 0);
+	if (new_setting != old_setting) {
+		if (new_setting)
+			set_bit(ADRENO_DEVICE_HANG_INTR, &adreno_dev->priv);
+		else
+			clear_bit(ADRENO_DEVICE_HANG_INTR, &adreno_dev->priv);
+		/* Set the new setting based on device state */
+		switch (device->state) {
+		case KGSL_STATE_NAP:
+		case KGSL_STATE_SLEEP:
+			kgsl_pwrctrl_clk(device, KGSL_PWRFLAGS_ON,
+					device->state);
+		case KGSL_STATE_ACTIVE:
+			adreno_dev->gpudev->irq_control(adreno_dev, 1);
+		/*
+		 * For following states setting will be picked up on device
+		 * start. Still need them in switch statement to differentiate
+		 * from default
+		 */
+		case KGSL_STATE_SLUMBER:
+		case KGSL_STATE_SUSPEND:
+			break;
+		default:
+			ret = -EACCES;
+			/* reset back to old setting on error */
+			if (new_setting)
+				clear_bit(ADRENO_DEVICE_HANG_INTR,
+					&adreno_dev->priv);
+			else
+				set_bit(ADRENO_DEVICE_HANG_INTR,
+					&adreno_dev->priv);
+			goto done;
+		}
+	}
+done:
+	mutex_unlock(&device->mutex);
+	return ret;
+}
+
+/**
+ * _ft_hang_intr_status_show() -  Routine to read hardware hang interrupt
+ * enablement
+ * @dev: device ptr
+ * @attr: Device attribute
+ * @buf: value read
+ */
+static ssize_t _ft_hang_intr_status_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct adreno_device *adreno_dev = _get_adreno_dev(dev);
+	if (adreno_dev == NULL)
+		return 0;
+	return snprintf(buf, PAGE_SIZE, "%d\n",
+		test_bit(ADRENO_DEVICE_HANG_INTR, &adreno_dev->priv) ? 1 : 0);
+}
+
 #define FT_DEVICE_ATTR(name) \
 	DEVICE_ATTR(name, 0644,	_ ## name ## _show, _ ## name ## _store);
 
@@ -2544,6 +2634,7 @@ FT_DEVICE_ATTR(ft_policy);
 FT_DEVICE_ATTR(ft_pagefault_policy);
 FT_DEVICE_ATTR(ft_fast_hang_detect);
 FT_DEVICE_ATTR(ft_long_ib_detect);
+FT_DEVICE_ATTR(ft_hang_intr_status);
 
 static DEVICE_INT_ATTR(wake_nice, 0644, _wake_nice);
 static FT_DEVICE_ATTR(wake_timeout);
@@ -2555,6 +2646,7 @@ const struct device_attribute *ft_attr_list[] = {
 	&dev_attr_ft_long_ib_detect,
 	&dev_attr_wake_nice.attr,
 	&dev_attr_wake_timeout,
+	&dev_attr_ft_hang_intr_status,
 	NULL,
 };
 

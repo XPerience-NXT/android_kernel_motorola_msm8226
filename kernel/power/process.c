@@ -23,7 +23,8 @@
 /* 
  * Timeout for stopping processes
  */
-#define TIMEOUT	(10 * HZ)
+//#define TIMEOUT	(10 * HZ)
+unsigned int __read_mostly freeze_timeout_msecs = 2 * MSEC_PER_SEC;
 
 static int try_to_freeze_tasks(bool user_only)
 {
@@ -39,7 +40,7 @@ static int try_to_freeze_tasks(bool user_only)
 
 	do_gettimeofday(&start);
 
-	end_time = jiffies + TIMEOUT;
+	end_time = jiffies + msecs_to_jiffies(freeze_timeout_msecs);
 
 	if (!user_only)
 		freeze_workqueues_begin();
@@ -204,6 +205,7 @@ void thaw_processes(void)
 
 	printk("Restarting tasks ... ");
 
+	__usermodehelper_set_disable_depth(UMH_FREEZING);
 	thaw_workqueues();
 
 	read_lock(&tasklist_lock);

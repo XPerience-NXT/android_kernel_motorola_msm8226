@@ -29,8 +29,8 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/input.h>
-#ifdef CONFIG_HAS_EARLYSUSPEND
-#include <linux/earlysuspend.h>
+#ifdef CONFIG_POWERSUSPEND
+#include <linux/powersuspend.h>
 #endif
 #include <linux/hrtimer.h>
 #include <asm-generic/cputime.h>
@@ -58,7 +58,7 @@ MODULE_LICENSE("GPLv2");
 #define DT2W_DEBUG		0
 #define DT2W_DEFAULT		1
 
-#define DT2W_PWRKEY_DUR		60
+#define DT2W_PWRKEY_DUR		10
 #define DT2W_FEATHER		200
 #define DT2W_TIME		700
 
@@ -69,9 +69,7 @@ static cputime64_t tap_time_pre = 0;
 static int touch_x = 0, touch_y = 0, touch_nr = 0, x_pre = 0, y_pre = 0;
 static bool touch_x_called = false, touch_y_called = false, touch_cnt = true;
 static bool exec_count = true;
-//#ifndef CONFIG_HAS_EARLYSUSPEND
-//#static struct notifier_block dt2w_lcd_notif;
-//#endif
+//static struct notifier_block dt2w_lcd_notif;
 static struct input_dev * doubletap2wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 static struct workqueue_struct *dt2w_input_wq;
@@ -100,6 +98,7 @@ static void doubletap2wake_reset(void) {
 	tap_time_pre = 0;
 	x_pre = 0;
 	y_pre = 0;
+	touch_cnt = false;
 }
 
 /* PowerKey work func */
@@ -149,28 +148,30 @@ static void detect_doubletap2wake(int x, int y, bool st)
                 x, y, (single_touch) ? "true" : "false");
 #endif
 	if ((single_touch) && (dt2w_switch > 0) && (exec_count) && (touch_cnt)) {
-		touch_cnt = false;
+		
+		if ((ktime_to_ms(ktime_get())-tap_time_pre) >= DT2W_TIME)
+			doubletap2wake_reset();
+		
 		if (touch_nr == 0) {
 			new_touch(x, y);
 		} else if (touch_nr == 1) {
 			if ((calc_feather(x, x_pre) < DT2W_FEATHER) &&
-			    (calc_feather(y, y_pre) < DT2W_FEATHER) &&
-			    ((ktime_to_ms(ktime_get())-tap_time_pre) < DT2W_TIME))
-				touch_nr++;
-			else {
+			    (calc_feather(y, y_pre) < DT2W_FEATHER)) {
+				pr_info(LOGTAG"ON\n");
+				exec_count = false;
+				doubletap2wake_pwrtrigger();
+				doubletap2wake_reset();
+			} else {
 				doubletap2wake_reset();
 				new_touch(x, y);
 			}
-		} else {
-			doubletap2wake_reset();
-			new_touch(x, y);
 		}
-		if ((touch_nr > 1)) {
+		/*if ((touch_nr > 1)) {
 			pr_info(LOGTAG"ON\n");
 			exec_count = false;
 			doubletap2wake_pwrtrigger();
 			doubletap2wake_reset();
-		}
+		}*/
 	}
 }
 
@@ -213,7 +214,7 @@ static void dt2w_input_event(struct input_handle *handle, unsigned int type,
 		touch_y_called = true;
 	}
 
-	if (touch_x_called || touch_y_called) {
+	if ((touch_x_called || touch_y_called) && touch_cnt)  {
 		touch_x_called = false;
 		touch_y_called = false;
 		queue_work_on(0, dt2w_input_wq, &dt2w_input_work);
@@ -280,19 +281,18 @@ static struct input_handler dt2w_input_handler = {
 	.id_table	= dt2w_ids,
 };
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-static void dt2w_early_suspend(struct early_suspend *h) {
+#ifdef CONFIG_POWERSUSPEND
+static void dt2w_power_suspend(struct power_suspend *h) {
 	dt2w_scr_suspended = true;
 }
 
-static void dt2w_late_resume(struct early_suspend *h) {
+static void dt2w_power_resume(struct power_suspend *h) {
 	dt2w_scr_suspended = false;
 }
 
-static struct early_suspend dt2w_early_suspend_handler = {
-	.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN,
-	.suspend = dt2w_early_suspend,
-	.resume = dt2w_late_resume,
+static struct power_suspend dt2w_power_suspend_handler = {
+	.suspend = dt2w_power_suspend,
+	.resume = dt2w_power_resume,
 };
 #endif
 
@@ -380,8 +380,8 @@ static int __init doubletap2wake_init(void)
 	if (rc)
 		pr_err("%s: Failed to register dt2w_input_handler\n", __func__);
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	register_early_suspend(&dt2w_early_suspend_handler);
+#ifdef CONFIG_POWERSUSPEND
+	register_power_suspend(&dt2w_power_suspend_handler);
 #endif
 
 #ifndef ANDROID_TOUCH_DECLARED
